@@ -90,14 +90,14 @@ void cooley_tukey_FFT(double *in, double complex *out, double complex *W, size_t
 	int n=128;
 	for(int i=1; i<log2(n);++i)
 	{
-	  int Half_DFT_Size = exp(2,i);
+	  int Half_DFT_Size = pow(2,i);
+	  int counter =0;
 	  for(int m=0;m<128;++m)
 	  {
-		int counter =0;
 		if(counter>=Half_DFT_Size)
 			out[m] = in[m-Half_DFT_Size] - W[n][counter]*in[m];
 		else
-			out[m] = in[m] + W[n][counter]*in[m];
+			out[m] = in[m] + W[n][counter]*in[m+Half_DFT_Size];
 		counter++;
 		if(counter == (Half_DFT_Size*2))
 			counter = 0;
@@ -107,7 +107,6 @@ void cooley_tukey_FFT(double *in, double complex *out, double complex *W, size_t
 
 void Bit_reversal(double *in, size_t N)
 {
-	clock_t start,end;
 	int m = log2(N);
 	for (int index=0; index<N/2;++index)
 	{
@@ -273,7 +272,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.Resolution = ADC_RESOLUTION_8B;
   hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
@@ -281,7 +280,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -291,7 +290,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
