@@ -43,7 +43,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "complex.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -66,7 +66,8 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 /* USER CODE BEGIN PV */
-
+enum{ size = 110};
+uint32_t buffer[size];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -78,14 +79,14 @@ static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
 void Bit_reversal(double *in, size_t N);
-void cooley_tukey_FFT(double *in, double complex *out, size_t N);
+void Cooley_tukey_FFT(double complex *in, double complex *out, double complex *W, size_t N);
 void Generate_Twiddle(double complex *twid, size_t N);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/*
-void cooley_tukey_FFT(double *in, double complex *out, double complex *W, size_t N)
+
+void cooley_tukey_FFT(double complex *in, double complex *out, double complex *W, size_t N)
 {
 	int n=128;
 	for(int i=1; i<log2(n);++i)
@@ -95,29 +96,37 @@ void cooley_tukey_FFT(double *in, double complex *out, double complex *W, size_t
 	  for(int m=0;m<128;++m)
 	  {
 		if(counter>=Half_DFT_Size)
-			out[m] = in[m-Half_DFT_Size] - W[n][counter]*in[m];
+			out[m] = in[m-Half_DFT_Size] - W[n]*in[m];
 		else
-			out[m] = in[m] + W[n][counter]*in[m+Half_DFT_Size];
+			out[m] = in[m] + W[n]*in[m+Half_DFT_Size];
 		counter++;
 		if(counter == (Half_DFT_Size*2))
 			counter = 0;
-	  }
+	   }
+	}
+	double *temp = in;
+	in = out;
+	out = temp;
+
 }
-*/
+
 
 void Bit_reversal(double *in, size_t N)
 {
-	int m = log2(N);
-	for (int index=0; index<N/2;++index)
+	int m = log2(N); //Number of bits
+	for (int index=0; index<N/2;++index) //Up to half the array because pair values are swapped
 	{
 		int curr_addr = index;
 		int New_addr = 0;
 		for(int bits=0; bits<m;++bits)
 		{
-			int Remainder = (int)fmod(curr_addr,2);
-			New_addr += Remainder*pow(2,m-1-bits);
-			curr_addr = floor(curr_addr/2);
+			//Calculating the mod of the index converts the number to binary but by instead counting down from the index of
+			//the most significant bit and multiplying that with the remainder we obtain the equiavlent base-10 number reversed.
+			int Remainder = (int)fmod(curr_addr,2); //current number mod2
+			New_addr += Remainder*pow(2,m-1-bits); //multiplying remainder with most significant bit first
+			curr_addr = floor(curr_addr/2); //dividing the current number by 2 as for normal binary conversion
 		}
+		//Swapping the values
 		double temp = in[index];
 		in[index] = in[New_addr];
 		in[New_addr] = temp;
@@ -146,6 +155,11 @@ void Bit_reversal(double *in, size_t N)
 		//}
 	}
 	*/
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc1)
+{
+	HAL_GPIO_TogglePin(GPIOG,GPIO_PIN_13);
 }
 /* USER CODE END 0 */
 
@@ -177,13 +191,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_ADC1_Init();
-
+  MX_DMA_Init();
   /* Initialize interrupts */
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_Start_DMA(&hadc1,buffer,size);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -191,7 +205,8 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+	  HAL_GPIO_TogglePin(GPIOG,GPIO_PIN_14);
+	  //HAL_Delay(200);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -249,6 +264,9 @@ static void MX_NVIC_Init(void)
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* ADC_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(ADC_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(ADC_IRQn);
 }
 
 /**
@@ -308,7 +326,28 @@ static void MX_DMA_Init(void)
 {
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  HAL_DMA_DeInit(&hdma_adc1);
+  hdma_adc1.Instance = DMA2_Stream0;
 
+  hdma_adc1.Init.Channel  = DMA_CHANNEL_0;
+  hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+  hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
+  hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
+  hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+  hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
+  hdma_adc1.Init.Mode = DMA_CIRCULAR;
+  hdma_adc1.Init.Priority = DMA_PRIORITY_HIGH;
+  hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+  hdma_adc1.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_HALFFULL;
+  hdma_adc1.Init.MemBurst = DMA_MBURST_SINGLE;
+  hdma_adc1.Init.PeriphBurst = DMA_PBURST_SINGLE;
+
+  HAL_DMA_Init(&hdma_adc1);
+
+  __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
+
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 }
 
 /**
@@ -349,6 +388,32 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 
+
+
+	/*
+
+	 hdma_adc1.Instance = DMA2_Stream4;
+
+  hdma_adc1.Init.Channel  = DMA_CHANNEL_0;
+  hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+  hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
+  hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
+  hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+  hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
+  hdma_adc1.Init.Mode = DMA_CIRCULAR;
+  hdma_adc1.Init.Priority = DMA_PRIORITY_HIGH;
+  hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+  hdma_adc1.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_HALFFULL;
+  hdma_adc1.Init.MemBurst = DMA_MBURST_SINGLE;
+  hdma_adc1.Init.PeriphBurst = DMA_PBURST_SINGLE;
+
+  HAL_DMA_Init(&hdma_adc1);
+
+  __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
+
+  HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
+	 */
   /* USER CODE END Error_Handler_Debug */
 }
 
