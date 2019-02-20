@@ -67,8 +67,19 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 /* USER CODE BEGIN PV */
-enum{ size = 50};
+enum{ size = 8};
+size_t N =8;
 uint32_t buffer[size];
+double complex twiddle[128];
+double complex in[size] =  {0.3535,
+							0.3535,
+							0.6464,
+							1.0607,
+							0.3535,
+							-1.0607,
+							-1.3535,
+							-0.3535};
+double complex out[size];
 int count1;
 int count2;
 int count3;
@@ -83,46 +94,87 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
-void Bit_reversal(double *in, size_t N);
+void Bit_reversal(double complex *in, size_t N);
 void Cooley_tukey_FFT(double complex *in, double complex *out, double complex *W, size_t N);
-void Generate_Twiddle(double complex *twid, size_t N);
+void twiddle_maker(double complex *twiddle_factors,uint32_t fft_size);
+void CopyArray(double complex *in, double complex *out, size_t N);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void cooley_tukey_FFT(double complex *in, double complex *out, double complex *W, size_t N)
+void CopyArray(double complex *in, double complex *out, size_t N)
 {
-	int n=128;
-	for(int i=1; i<log2(n);++i)
+	for (int i=0;i<N;i++)
+	{
+		out[i]=in[i];
+	}
+}
+void Cooley_tukey_FFT(double complex *in, double complex *out, double complex *W, size_t N)
+{
+	Bit_reversal(in,N);
+	int n=N;
+	int twiddle_jump;
+	int indic;
+	for(int i=0; i<log2(n);++i)
 	{
 	  int Half_DFT_Size = pow(2,i);
 	  int counter =0;
-	  for(int m=0;m<128;++m)
+	  twiddle_jump=pow(2,n-i-1)/2;
+	  for(int m=0;m<n;++m)
 	  {
-		if(counter>=Half_DFT_Size)
-			out[m] = in[m-Half_DFT_Size] - W[n]*in[m];
+		if(counter==0)
+		{
+			indic=0;
+		}
 		else
-			out[m] = in[m] + W[n]*in[m+Half_DFT_Size];
+		{
+			indic=(counter*twiddle_jump);
+			if (indic == 128)
+				indic--;
+		}
+		if(counter>=Half_DFT_Size)
+			out[m] = in[m-Half_DFT_Size] + (W[indic]*in[m]);
+		else
+			out[m] = in[m] + (W[indic]*in[m+Half_DFT_Size]);
 		counter++;
 		if(counter == (Half_DFT_Size*2))
 			counter = 0;
 	   }
+		double complex *temp = in;
+		in = out;
+		out = temp;
 	}
-	double complex *temp = in; //input array changes to output array and output array is set to input to process next set of values
-	in = out;
-	out = temp;
-
+	out = in;
 }
 
+void twiddle_maker(double complex *twiddle_factors, uint32_t fft_size)
+{
+	uint32_t count;
+	for(count=0;count<fft_size;count++)
+	{
+		twiddle_factors[count]=cexp(-1*I*M_PI*2*count/fft_size);
+	}
+}
 
-void Bit_reversal(double *in, size_t N)
+void Bit_reversal(double complex *in, size_t N)
 {
 	int m = log2(N); //Number of bits
 	for (int index=0; index<N/2;++index) //Up to half the array because pair values are swapped
 	{
 		int curr_addr = index;
 		int New_addr = 0;
+		int bits=0;
+		while(curr_addr!=0)
+		{
+			//Calculating the mod of the index converts the number to binary but by instead counting down from the index of
+			//the most significant bit and multiplying that with the remainder we obtain the equiavlent base-10 number reversed.
+			int Remainder = (int)fmod(curr_addr,2); //current number mod2
+			New_addr += Remainder*pow(2,m-1-bits); //multiplying remainder with most significant bit first
+			curr_addr = floor(curr_addr/2); //dividing the current number by 2 as for normal binary conversion
+			bits++;
+		}
+		/*
 		for(int bits=0; bits<m;++bits)
 		{
 			//Calculating the mod of the index converts the number to binary but by instead counting down from the index of
@@ -131,8 +183,9 @@ void Bit_reversal(double *in, size_t N)
 			New_addr += Remainder*pow(2,m-1-bits); //multiplying remainder with most significant bit first
 			curr_addr = floor(curr_addr/2); //dividing the current number by 2 as for normal binary conversion
 		}
+		*/
 		//Swapping the values
-		double temp = in[index];
+		double complex temp = in[index];
 		in[index] = in[New_addr];
 		in[New_addr] = temp;
 	}
@@ -173,12 +226,6 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc1)
 {
 	HAL_GPIO_TogglePin(GPIOG,GPIO_PIN_13);
 	double g_ADCValue = HAL_ADC_GetValue(&hadc1);
-
-	if (HAL_ADC_PollForConversion(&hadc1, 1000000) == HAL_OK)
-			  {
-				  g_ADCValue = HAL_ADC_GetValue(&hadc1);
-				  g_MeasurementNumber++;
-			  }
 
 	count2++;
 }
@@ -225,7 +272,9 @@ int main(void)
   //HAL_ADC_Start(&hadc1);
   HAL_ADC_Start_DMA(&hadc1,buffer,size);
   /* USER CODE END 2 */
-
+  twiddle_maker(twiddle,128);
+  CopyArray(in,out,N);
+  Cooley_tukey_FFT(in,out,twiddle,N);
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
